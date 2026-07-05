@@ -19,6 +19,7 @@ Flask-based REST API for finding the nearest driver to a user using the **Havers
 - [Code Flow Explanation](#code-flow-explanation)
   - [Flow 1 — Finding Driver](#flow-1--get-find_nearest_driveruser_id)
   - [Flow 2 — Clustering & Sorting](#flow-2--get-clustering_and_sorting)
+- [Node.js Migration (ecotup-api)](#nodejs-migration-ecotup-api)
 - [Issues & Fixes Encountered](#issues--fixes-encountered)
 - [Backend Integration](#backend-integration)
 - [Project Structure](#project-structure)
@@ -252,6 +253,106 @@ engine = create_engine('mysql+pymysql://Ecotup_user:ecotup!@mysql8/ecotup')
 | `ecotup!` | password | Password user |
 | `mysql8` | host | Hostname container MySQL di Docker network `internal-net` |
 | `ecotup` | database | Nama database yang digunakan |
+
+---
+
+## Node.js Migration (ecotup-api)
+
+Fitur **Finding Driver** dan **Clustering & TSP Sorting** telah berhasil dimigrasikan ke project Node.js Express (`ecotup-api`). Fitur **Trash Classification** tetap menggunakan Python/Flask karena bergantung pada model TensorFlow/InceptionV3.
+
+### Kenapa bisa dimigrasikan?
+
+Kedua fitur ini tidak menggunakan file model ML (`.h5`/`.pkl`). Seluruh logikanya adalah algoritma murni (matematika + query SQL) yang dapat diimplementasikan di bahasa apapun.
+
+| Fitur | Python (Flask) | Node.js (Express) | Keterangan |
+|-------|:--------------:|:-----------------:|------------|
+| Finding Driver | ✅ | ✅ | Haversine + SQL — pure math |
+| Clustering & TSP | ✅ | ✅ | K-Means manual + TSP Greedy |
+| Trash Classification | ✅ | ❌ | Butuh TensorFlow/InceptionV3 model |
+
+---
+
+### Endpoints di ecotup-api (Node.js)
+
+| Method | Endpoint | Deskripsi |
+|--------|----------|-----------|
+| `GET` | `/api/ml/find_nearest_driver/:user_id` | Cari driver terdekat |
+| `GET` | `/api/ml/clustering_and_sorting` | Clustering + TSP sorting |
+
+**Base URL:** `http://43.157.208.51:8000`
+
+#### Contoh Request & Response
+
+```
+GET http://43.157.208.51:8000/api/ml/find_nearest_driver/44
+```
+
+```json
+{
+  "error": false,
+  "message": "Request successful",
+  "data": {
+    "user_id": 44,
+    "nearest_driver_id": 9,
+    "driver_longitude": 107.5388277,
+    "driver_latitude": -6.8972838,
+    "distance": 0.0
+  }
+}
+```
+
+```
+GET http://43.157.208.51:8000/api/ml/clustering_and_sorting
+```
+
+```json
+{
+  "error": false,
+  "message": "Clustering and sorting successful",
+  "data": {
+    "cluster0": [
+      {
+        "pickup_order": 1,
+        "driver_id": 8,
+        "driver_longitude": 106.8272,
+        "driver_latitude": -6.1754,
+        "user_id": 43,
+        "user_longitude": 106.8456,
+        "user_latitude": -6.2088
+      }
+    ],
+    "cluster1": [...],
+    "cluster2": [...]
+  }
+}
+```
+
+---
+
+### Struktur File yang Ditambahkan di ecotup-api
+
+```
+ecotup-api/
+├── controller/
+│   └── ml_controller.js    ← Logika finding driver + clustering TSP
+├── routes/
+│   └── ml_routes.js        ← Route definitions /api/ml/...
+└── app.js                  ← Ditambahkan: app.use("/api/ml", ...)
+```
+
+---
+
+### Implementasi Node.js — Perbedaan dengan Python
+
+| Aspek | Python (finding_driver.py) | Node.js (ml_controller.js) |
+|-------|---------------------------|---------------------------|
+| Haversine | Dihitung via SQL query langsung | Dihitung di JavaScript setelah fetch |
+| K-Means | Implementasi manual dengan NumPy | Implementasi manual dengan JavaScript |
+| TSP Greedy | Loop Python biasa | Loop JavaScript biasa |
+| DB Connector | SQLAlchemy + PyMySQL | Knex.js + mysql2 |
+| Dependency tambahan | `numpy`, `scikit-learn` | Tidak ada (zero new deps) |
+
+> K-Means di Node.js tidak menggunakan library eksternal — diimplementasi manual agar kompatibel dengan project CommonJS yang sudah ada.
 
 ---
 
