@@ -1,38 +1,381 @@
-# ecotup-ML
-This repository for ecotup project focusing on Machine Learning and Python script, in this repository we have 3 model which is the trash classification softmax, trash classification sigmoid, and we also have a clustering model that fused with sorting algoritm especially using TSP Greedy Algorithm. For the Trash Classification Model we using the InceptionV3 transfer learning using Imagenet weight for more accurate prediction.
+# ecotup-ML — Finding Driver Service
 
-## Introduction
-Machine learning is a computer systems that are able to learn and adapt without following explicit instructions, by using algorithms and statistical models to analyze and draw inferences from patterns in data. With this technology almost any problem that humans have a hard time doing can be solved easily and it can make humans work much more easier. Our job as a machine learning developer in this Ecotup team is to make and give innovation that can make the app much more automatic, more efficient, can help user become better and much more satisfying to use.  
+Flask-based REST API for finding the nearest driver to a user using the **Haversine formula**, backed by MySQL and containerized with Docker.
 
-## Datasets that we use
-- [Softmax trash dataset make by Rivaldo uploaded to kaggle](https://www.kaggle.com/datasets/rivaldo1233/reallife-trash-dataset)
-- [Sigmoid trash dataset make by Sashaank Sekar uploaded to kaggle](https://www.kaggle.com/datasets/techsash/waste-classification-data)
-  
-## Model that we use 
-- [Sigmoid trash classification model code](https://github.com/ecotup/ecotup-ML/blob/main/Model_Code/Trash_Classification_Sigmoid.ipynb)
-- [Softmax trash classification model code](https://github.com/ecotup/ecotup-ML/blob/main/Model_Code/Trash_Classification_Softmax.ipynb)
-- [Clustering user houses model code](https://github.com/ecotup/ecotup-ML/blob/main/Model_Code/Clustering_houses_AI.ipynb)
+---
 
-## About the Model 
-The model that we use are Softmax and Sigmoid Trash Classification about the sigmoid trash classification were actually using a softmax output but because its only 2 results were saying sigmoid trash classification not softmax. the trash classification model is using transfer learning for better efficiency and better prediction, we're using the InceptionV3 with Imagenet weights and added couple of more layers for training for achieving the best result. We're also using Clustering model that can group people houses before being sorted later on the reason were not using the model file and were using more like a script code is because our data is updating real time making it really impossible to cluster the users properly for the subscription feature.
+## Table of Contents
 
-## Script that we use 
-- [Find nearest driver script](https://github.com/ecotup/ecotup-ML/blob/main/Feature_python_dockerize/finding_driver.py)
-- [Clusterina and sorting the user houses script](https://github.com/ecotup/ecotup-ML/blob/main/Feature_python_dockerize/clustering_and_sort.py)
-- [Script for combining both of the script routes](https://github.com/ecotup/ecotup-ML/blob/main/Feature_python_dockerize/flask_app_capstone.py)
+- [Features](#features)
+- [API Endpoints](#api-endpoints)
+- [Architecture](#architecture)
+- [Prerequisites](#prerequisites)
+- [Step-by-Step Deployment](#step-by-step-deployment)
+  - [1. Clone Repository](#1-clone-repository)
+  - [2. Setup MySQL with Docker](#2-setup-mysql-with-docker)
+  - [3. Create Database User](#3-create-database-user)
+  - [4. Build & Run the Flask Service](#4-build--run-the-flask-service)
+  - [5. Verify the Service](#5-verify-the-service)
+- [Issues & Fixes Encountered](#issues--fixes-encountered)
+- [Backend Integration](#backend-integration)
+- [Project Structure](#project-structure)
 
-## About the Script
-One of the Script here is for finding the nearest driver for the user in the one time only pick up. The first thing it do is to take the user id that already been sent to http parameter when running then the algorithm is using the SQLAlchemy to use the SQL engine for accessing the SQL that our Cloud Computing is working on and the pymysql is for running the query the query is used to take the user data longitude and latitude and then transfer it to another query that take the necessary data from driver id for calculation using haversine calculation and getting the nearest driver in the SQL database. Then it will return the necessary data to the android. The second one contain the model for clustering and sending the data and cluster it up then sort it using the TSP Greedy Algorithm for sorting it based on the nearest point and then sorting it in order. We also have the last script called flask-app-capstone for combining both of the routes and can be deployed on the same port using blueprint syntax that already exist in the Flask library.
+---
 
-## Folder list inside the repository and whats inside
-- feature_python_dockerize = inside is fill with features that already been prepared using dockerfile that only need to build image then deploy using google cloud run
-- Model_Code = inside is fill with the model code that already succeeded and already turned into the model file while also implemented to the app
+## Features
 
-## Evaluation 
-All and all we confident that our work have succeeded and getting the most amazing result possible, with the Softmax and Sigmoid Trash Classification that reached more than 90% in training and at least more than 80% in validation. For the cluster model were finding it satisfactory and yieding impressive result! The script also help a lot at the Cloud Computing and Mobile Development side. 
+- Find nearest driver based on user GPS coordinates (Haversine calculation)
+- Clustering and sorting user houses using TSP Greedy Algorithm
+- Fully containerized — runs via Docker with zero host dependencies
+- Blueprint-based Flask app for modular routing
 
-## Further Work
-We're already done working on the voice recognition model. But because of Mobile Development huge workload we decided to implement and deploy it later on after we're done with this capstone. We're also planning to make our own routing for the one time pick up and subscription without relying on Google Routing because of the budget. Then we're planning on making Script/AI for recommendation about article related to trash and nature itself. This team also want to developed a AI for calculating how much fertilizer and water needed for plants and disease image classification on plants. 
+---
 
-## Afterwords
-We're now at the end of the documentation! We tackle of many aspect of our work and our ambition moving forward! we thank you for your dedication for reading this documentation about our ML repository, and lastly goodbye :D.
+## API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/` | Health check |
+| `GET` | `/find_nearest_driver/<user_id>` | Find nearest driver for a user |
+| `GET` | `/clustering_and_sorting` | Cluster and sort user pickup routes |
+
+### Example Request
+
+```
+GET http://43.157.208.51/find_nearest_driver/44
+```
+
+### Example Response
+
+```json
+{
+  "distance": 0.0,
+  "driver_latitude": -6.8972838,
+  "driver_longitude": 107.5388277,
+  "nearest_driver_id": 9,
+  "user_id": 44
+}
+```
+
+---
+
+## Architecture
+
+```
+Android App
+    │
+    ▼
+Flask API (Docker) ── port 80 ──► http://43.157.208.51
+    │
+    │ internal-net (Docker Network)
+    ▼
+MySQL 8 (Docker) ── database: ecotup
+    │
+    ▼
+phpMyAdmin ── port 8080 ── http://43.157.208.51:8080
+```
+
+All services communicate through Docker network `internal-net`. The Flask app resolves MySQL using the container hostname `mysql8`.
+
+---
+
+## Prerequisites
+
+- Docker Engine installed on the server
+- Port `80` open for inbound traffic (Flask API)
+- Port `8080` open (optional, for phpMyAdmin)
+- Port `3306` does NOT need to be public (MySQL stays internal)
+
+---
+
+## Step-by-Step Deployment
+
+### 1. Clone Repository
+
+```bash
+git clone https://github.com/snipkode/ecotup-ML.git
+cd ecotup-ML
+```
+
+---
+
+### 2. Setup MySQL with Docker
+
+If MySQL is not yet running, create the Docker network and start MySQL:
+
+```bash
+# Create internal Docker network
+docker network create internal-net
+
+# Run MySQL 8 container
+docker run -d \
+  --name mysql8 \
+  --network internal-net \
+  --restart unless-stopped \
+  -e MYSQL_ROOT_PASSWORD=RootPass123! \
+  -e MYSQL_DATABASE=ecotup \
+  mysql:8
+
+# Run phpMyAdmin (optional, for DB management)
+docker run -d \
+  --name phpmyadmin \
+  --network internal-net \
+  --restart unless-stopped \
+  -e PMA_HOST=mysql8 \
+  -e PMA_PORT=3306 \
+  -p 8080:80 \
+  phpmyadmin/phpmyadmin
+```
+
+> phpMyAdmin accessible at: `http://<your-server-ip>:8080`  
+> Login: `root` / `RootPass123!`
+
+---
+
+### 3. Create Database User
+
+The Flask app connects using user `Ecotup_user`. Create this user with access to the `ecotup` database:
+
+```bash
+docker exec mysql8 mysql -uroot -pRootPass123! -e "
+CREATE USER IF NOT EXISTS 'Ecotup_user'@'%' IDENTIFIED BY 'ecotup!';
+GRANT ALL PRIVILEGES ON ecotup.* TO 'Ecotup_user'@'%';
+FLUSH PRIVILEGES;
+"
+```
+
+> **Note:** The `%` wildcard allows the user to connect from any host within Docker network. MySQL 8 uses `caching_sha2_password` by default — make sure `cryptography` package is in `requirements.txt` (already included).
+
+---
+
+### 4. Build & Run the Flask Service
+
+```bash
+cd Feature_python_dockerize
+
+# Build Docker image
+docker build -t ecotup-finding-driver:latest .
+
+# Run container on internal-net, expose port 80
+docker run -d \
+  --name ecotup-finding-driver \
+  --restart unless-stopped \
+  --network internal-net \
+  -p 80:5000 \
+  ecotup-finding-driver:latest
+```
+
+Key flags:
+- `--network internal-net` — connects to the same network as MySQL so it can reach `mysql8` by hostname
+- `-p 80:5000` — maps host port 80 to Flask's port 5000 inside the container
+- `--restart unless-stopped` — auto-restarts on server reboot
+
+---
+
+### 5. Verify the Service
+
+```bash
+# Health check
+curl http://localhost/
+
+# Test finding driver (replace 44 with a valid user_id from your DB)
+curl http://localhost/find_nearest_driver/44
+```
+
+Expected output:
+```json
+{
+  "distance": 0.0,
+  "driver_latitude": -6.8972838,
+  "driver_longitude": 107.5388277,
+  "nearest_driver_id": 9,
+  "user_id": 44
+}
+```
+
+Check running containers:
+```bash
+docker ps
+```
+
+Check service logs:
+```bash
+docker logs ecotup-finding-driver
+```
+
+---
+
+## Issues & Fixes Encountered
+
+### Issue 1: MySQL Connection Timeout (Original Remote DB)
+
+**Problem:**  
+The original `finding_driver.py` pointed to a remote MySQL host `34.128.90.76` which was not reachable from the new server:
+
+```
+pymysql.err.OperationalError: (2003, "Can't connect to MySQL server on '34.128.90.76' (timed out)")
+```
+
+**Fix:**  
+A MySQL 8 Docker container (`mysql8`) was already running on this server with the `ecotup` database. Updated the connection string to use the local container hostname instead:
+
+```python
+# Before
+engine = create_engine('mysql+pymysql://Ecotup_user:ecotup!@34.128.90.76/db_ecotup')
+
+# After
+engine = create_engine('mysql+pymysql://Ecotup_user:ecotup!@mysql8/ecotup')
+```
+
+---
+
+### Issue 2: MySQL Auth — Missing `cryptography` Package
+
+**Problem:**  
+MySQL 8 uses `caching_sha2_password` authentication by default. PyMySQL requires the `cryptography` package to support this auth method:
+
+```
+'cryptography' package is required for sha256_password or caching_sha2_password auth methods
+```
+
+**Fix:**  
+Added `cryptography==41.0.7` to `requirements.txt`:
+
+```
+Flask==3.0.0
+SQLAlchemy==2.0.23
+Werkzeug==3.0.0
+pymysql==1.0.3
+numpy==1.26.0
+scikit-learn==1.3.2
+cryptography==41.0.7
+```
+
+Then rebuilt the Docker image.
+
+---
+
+### Issue 3: Container Not on Same Docker Network as MySQL
+
+**Problem:**  
+Even after updating the hostname to `mysql8`, the Flask container couldn't resolve it because it was on a different Docker network (default `bridge`), not `internal-net` where MySQL runs.
+
+**Fix:**  
+Added `--network internal-net` flag when running the Flask container:
+
+```bash
+docker run -d \
+  --name ecotup-finding-driver \
+  --network internal-net \   # ← this was missing
+  -p 80:5000 \
+  ecotup-finding-driver:latest
+```
+
+---
+
+## Backend Integration
+
+To call the Finding Driver API from your backend (Node.js, Spring, etc.):
+
+### HTTP GET Request
+
+```
+GET http://43.157.208.51/find_nearest_driver/{user_id}
+```
+
+### Example — JavaScript / Node.js (fetch)
+
+```javascript
+const userId = 44;
+const response = await fetch(`http://43.157.208.51/find_nearest_driver/${userId}`);
+const data = await response.json();
+
+console.log(data);
+// {
+//   user_id: 44,
+//   nearest_driver_id: 9,
+//   driver_longitude: 107.5388277,
+//   driver_latitude: -6.8972838,
+//   distance: 0.0   // in kilometers
+// }
+```
+
+### Example — Kotlin / Android (Retrofit)
+
+```kotlin
+interface EcotupApiService {
+    @GET("find_nearest_driver/{userId}")
+    suspend fun findNearestDriver(
+        @Path("userId") userId: Int
+    ): FindDriverResponse
+}
+
+data class FindDriverResponse(
+    @SerializedName("user_id") val userId: Int,
+    @SerializedName("nearest_driver_id") val nearestDriverId: Int,
+    @SerializedName("driver_longitude") val driverLongitude: Double,
+    @SerializedName("driver_latitude") val driverLatitude: Double,
+    @SerializedName("distance") val distance: Double
+)
+
+// Base URL
+val retrofit = Retrofit.Builder()
+    .baseUrl("http://43.157.208.51/")
+    .addConverterFactory(GsonConverterFactory.create())
+    .build()
+```
+
+### Example — Python (requests)
+
+```python
+import requests
+
+user_id = 44
+res = requests.get(f"http://43.157.208.51/find_nearest_driver/{user_id}")
+print(res.json())
+```
+
+---
+
+## Project Structure
+
+```
+ecotup-ML/
+├── Feature_python_dockerize/
+│   ├── flask_app_capstone.py     # Main Flask app, registers blueprints
+│   ├── finding_driver.py         # Finding nearest driver logic + blueprint
+│   ├── clustering_and_sort.py    # Clustering & TSP sorting logic + blueprint
+│   ├── requirements.txt          # Python dependencies
+│   ├── Dockerfile                # Docker build instructions
+│   └── .dockerignore
+└── Model_Code/
+    ├── Trash_Classification_Sigmoid.ipynb
+    ├── Trash_Classification_Softmax.ipynb
+    └── Clustering_houses_AI.ipynb
+```
+
+---
+
+## Database Schema (ecotup)
+
+Tables used by the Finding Driver feature:
+
+**`tbl_user`**
+| Column | Type | Description |
+|--------|------|-------------|
+| `user_id` | INT | Primary key |
+| `user_longitude` | DOUBLE | User's GPS longitude |
+| `user_latitude` | DOUBLE | User's GPS latitude |
+
+**`tbl_driver`**
+| Column | Type | Description |
+|--------|------|-------------|
+| `driver_id` | INT | Primary key |
+| `driver_longitude` | DOUBLE | Driver's GPS longitude |
+| `driver_latitude` | DOUBLE | Driver's GPS latitude |
+
+---
+
+## License
+
+MIT
