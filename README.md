@@ -16,6 +16,9 @@ Flask-based REST API for finding the nearest driver to a user using the **Havers
   - [3. Create Database User](#3-create-database-user)
   - [4. Build & Run the Flask Service](#4-build--run-the-flask-service)
   - [5. Verify the Service](#5-verify-the-service)
+- [Code Flow Explanation](#code-flow-explanation)
+  - [Flow 1 — Finding Driver](#flow-1--get-find_nearest_driveruser_id)
+  - [Flow 2 — Clustering & Sorting](#flow-2--get-clustering_and_sorting)
 - [Issues & Fixes Encountered](#issues--fixes-encountered)
 - [Backend Integration](#backend-integration)
 - [Project Structure](#project-structure)
@@ -76,6 +79,179 @@ phpMyAdmin ── port 8080 ── http://43.157.208.51:8080
 ```
 
 All services communicate through Docker network `internal-net`. The Flask app resolves MySQL using the container hostname `mysql8`.
+
+---
+
+## Code Flow Explanation
+
+### Overview — Struktur Kode
+
+```
+flask_app_capstone.py          ← Entry point, menyatukan semua route
+├── GET /                      ← Health check
+├── finding_driver.py          ← Blueprint: /find_nearest_driver
+└── clustering_and_sort.py     ← Blueprint: /clustering_and_sorting
+```
+
+Aplikasi menggunakan pola **Blueprint** dari Flask — setiap fitur dipisah ke file berbeda, lalu didaftarkan ke satu app utama. Ini membuat kode lebih modular dan mudah dikembangkan.
+
+---
+
+### Flow 1 — `GET /find_nearest_driver/<user_id>`
+
+**Tujuan:** Menemukan driver terdekat dari lokasi user, digunakan untuk fitur pickup sekali pakai (one-time pickup).
+
+```
+Client kirim request
+GET /find_nearest_driver/44
+        │
+        ▼
+[ find_nearest_driver_endpoint() ]
+        │
+        ▼
+[ find_nearest_driver(user_id) ]
+        │
+        ├── Query 1: Ambil koordinat user
+        │   SELECT user_longitude, user_latitude
+        │   FROM tbl_user WHERE user_id = 44
+        │           │
+        │           ▼
+        │   user_longitude = 107.5388277
+        │   user_latitude  = -6.8972838
+        │
+        ├── Query 2: Hitung jarak ke semua driver (Haversine via SQL)
+        │   SELECT driver_id, driver_longitude, driver_latitude,
+        │     6371 * acos(
+        │       cos(radians(user_lat)) * cos(radians(driver_lat)) *
+        │       cos(radians(driver_lon) - radians(user_lon)) +
+        │       sin(radians(user_lat)) * sin(radians(driver_lat))
+        │     ) AS distance
+        │   FROM tbl_driver
+        │   ORDER BY distance ASC
+        │   LIMIT 1
+        │           │
+        │           ▼
+        │   Ambil 1 driver dengan jarak terpendek
+        │
+        ▼
+Return JSON:
+{
+  "user_id": 44,
+  "nearest_driver_id": 9,
+  "driver_longitude": 107.5388277,
+  "driver_latitude": -6.8972838,
+  "distance": 0.0        ← dalam kilometer
+}
+```
+
+**Kenapa Haversine dihitung di SQL?**
+Lebih efisien — perhitungan langsung di database server, tidak perlu fetch semua data driver ke Python baru dihitung satu per satu.
+
+**Kenapa pakai `bindparams`?**
+Mencegah SQL Injection. Nilai `user_id` tidak dimasukkan langsung ke string query, tapi di-bind secara aman oleh SQLAlchemy.
+
+---
+
+### Flow 2 — `GET /clustering_and_sorting`
+
+**Tujuan:** Mengelompokkan user berlangganan ke dalam 3 wilayah cluster, lalu menyusun urutan kunjungan pickup yang efisien untuk tiap driver.
+
+```
+Client kirim request
+GET /clustering_and_sorting
+        │
+        ▼
+┌─────────────────────────────────────────┐
+│  TAHAP 1: Fetch Data                    │
+│  fetch_data_from_mysql()                │
+│                                         │
+│  SELECT user_longitude, user_latitude   │
+│  FROM tbl_user JOIN tbl_subscription    │
+│  WHERE subscription_value > 0           │
+│  → Hanya user yang punya langganan aktif│
+└────────────────┬────────────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────────────┐
+│  TAHAP 2: K-Means Clustering            │
+│  Clustering_Training(result_data)       │
+│                                         │
+│  K = 3 cluster, max_iters = 20          │
+│                                         │
+│  Iterasi:                               │
+│  1. Pilih 3 centroid awal secara acak   │
+│  2. Assign tiap user ke centroid terdekat│
+│  3. Hitung ulang posisi centroid        │
+│  4. Ulangi sampai 20x                   │
+│                                         │
+│  Output: setiap user dapat label        │
+│  cluster 0, 1, atau 2                   │
+└────────────────┬────────────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────────────┐
+│  TAHAP 3: Simpan Hasil ke Database      │
+│  update_sql_with_clusters()             │
+│                                         │
+│  1. Reset cluster_id semua user → NULL  │
+│  2. Hapus semua data tbl_cluster        │
+│  3. Insert data cluster baru            │
+│     cluster 0 → driver_id 2            │
+│     cluster 1 → driver_id 3            │
+│     cluster 2 → driver_id 4            │
+│  4. Update cluster_id di tbl_user      │
+└────────────────┬────────────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────────────┐
+│  TAHAP 4: TSP Greedy Sorting            │
+│  assign_and_sort_with_tsp_greedy()      │
+│  (dijalankan 3x, 1x per cluster)        │
+│                                         │
+│  Per cluster:                           │
+│  1. Hitung jarak dari posisi driver     │
+│     ke semua user di cluster            │
+│  2. Mulai dari user terdekat ke driver  │
+│  3. Greedy: selalu pilih titik          │
+│     berikutnya yang paling dekat        │
+│  4. Hasilkan urutan kunjungan optimal   │
+└────────────────┬────────────────────────┘
+                 │
+                 ▼
+Return JSON:
+{
+  "cluster0": [
+    [urutan, driver_id, driver_lon, driver_lat, user_id, user_lon, user_lat],
+    ...
+  ],
+  "cluster1": [...],
+  "cluster2": [...]
+}
+```
+
+**Kenapa K-Means diimplementasi manual?**
+Data user bersifat real-time (terus berubah), sehingga model tidak bisa di-train sekali lalu disimpan. Setiap request melakukan clustering ulang dari data terbaru di database.
+
+**Kenapa TSP Greedy bukan algoritma optimal?**
+TSP optimal (exact solution) memiliki kompleksitas `O(n!)` yang tidak praktis untuk data besar. Greedy memberikan hasil yang "cukup baik" dengan kompleksitas `O(n²)` — cepat dan tetap efisien untuk jumlah user yang wajar.
+
+---
+
+### Koneksi Database
+
+Semua koneksi menggunakan SQLAlchemy dengan PyMySQL driver:
+
+```python
+engine = create_engine('mysql+pymysql://Ecotup_user:ecotup!@mysql8/ecotup')
+```
+
+| Bagian | Nilai | Keterangan |
+|--------|-------|------------|
+| `mysql+pymysql` | driver | SQLAlchemy pakai PyMySQL sebagai connector |
+| `Ecotup_user` | username | User MySQL yang dibuat khusus untuk app ini |
+| `ecotup!` | password | Password user |
+| `mysql8` | host | Hostname container MySQL di Docker network `internal-net` |
+| `ecotup` | database | Nama database yang digunakan |
 
 ---
 
